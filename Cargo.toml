@@ -585,10 +585,11 @@ protobuf-build = ["dep:tonic-build", "dep:prost-build"]
 gcp = ["dep:base64", "dep:goauth", "dep:smpl_jwt"]
 
 # Enrichment Tables
-enrichment-tables = ["enrichment-tables-geoip", "enrichment-tables-mmdb", "enrichment-tables-memory"]
+enrichment-tables = ["enrichment-tables-geoip", "enrichment-tables-mmdb", "enrichment-tables-memory", "enrichment-tables-matchy"]
 enrichment-tables-geoip = ["dep:maxminddb"]
 enrichment-tables-mmdb = ["dep:maxminddb"]
 enrichment-tables-memory = ["dep:evmap", "dep:evmap-derive", "dep:thread_local"]
+enrichment-tables-matchy = ["dep:matchy"]
 
 # Codecs
 codecs-arrow = ["dep:arrow", "dep:arrow-schema", "vector-lib/arrow"]
@@ -1094,7 +1095,7 @@ remap-benches = ["transforms-remap"]
 transform-benches = ["transforms-filter", "transforms-dedupe", "transforms-reduce", "transforms-route"]
 codecs-benches = []
 loki-benches = ["sinks-loki"]
-enrichment-tables-benches = ["enrichment-tables-geoip", "enrichment-tables-mmdb", "enrichment-tables-memory"]
+enrichment-tables-benches = ["enrichment-tables-geoip", "enrichment-tables-mmdb", "enrichment-tables-memory", "enrichment-tables-matchy"]
 proptest = ["dep:proptest", "dep:proptest-derive", "vrl/proptest"]
 
 [[bench]]

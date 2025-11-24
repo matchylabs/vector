@@ -20,6 +20,9 @@ pub mod geoip;
 #[cfg(feature = "enrichment-tables-mmdb")]
 pub mod mmdb;
 
+#[cfg(feature = "enrichment-tables-matchy")]
+pub mod matchy;
+
 /// Configuration options for an [enrichment table](https://vector.dev/docs/reference/glossary/#enrichment-tables) to be used in a
 /// [`remap`](https://vector.dev/docs/reference/configuration/transforms/remap/) transform. Currently supported are:
 ///
@@ -65,6 +68,13 @@ pub enum EnrichmentTables {
     /// [maxmind]: https://www.maxmind.com/
     #[cfg(feature = "enrichment-tables-mmdb")]
     Mmdb(mmdb::MmdbConfig),
+
+    /// Exposes data from a Matchy database (.mxy) or MaxMind database (.mmdb) as an enrichment table.
+    ///
+    /// Matchy provides unified IP lookups, pattern matching, and threat intelligence capabilities.
+    /// Fully compatible with MaxMind MMDB format for drop-in GeoIP replacement.
+    #[cfg(feature = "enrichment-tables-matchy")]
+    Matchy(matchy::MatchyConfig),
 }
 
 impl GenerateConfig for EnrichmentTables {
@@ -91,6 +101,8 @@ impl EnrichmentTables {
             EnrichmentTables::Geoip(geoip_config) => vec![&geoip_config.path],
             #[cfg(feature = "enrichment-tables-mmdb")]
             EnrichmentTables::Mmdb(mmdb_config) => vec![&mmdb_config.path],
+            #[cfg(feature = "enrichment-tables-matchy")]
+            EnrichmentTables::Matchy(matchy_config) => vec![&matchy_config.path],
         }
     }
 }

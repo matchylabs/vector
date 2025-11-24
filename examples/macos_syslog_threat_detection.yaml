@@ -1,0 +1,70 @@
+# macOS System Log Monitoring with Threat Detection
+#
+# This configuration:
+# 1. Tails macOS system logs using `log stream`
+# 2. Uses matchy transform to extract IOCs and check against threat database
+# 3. Sends all logs to Axiom with threat enrichment
+#
+# Required setup:
+# 1. Create a matchy threat database: /data/threats.mxy
+# 2. Set environment variable: AXIOM_TOKEN=<your-token>
+# 3. Set environment variable: AXIOM_DATASET=<your-dataset-name>
+#
+# Get your Axiom token from: https://app.axiom.co/settings/tokens
+# Create a dataset at: https://app.axiom.co/<org>/datasets
+
+sources:
+  macos_syslog:
+    type: exec
+    mode: streaming
+    command:
+      - log
+      - stream
+      - --style
+      - syslog
+      - --level
+      - info
+      - --color
+      - none
+      - --no-backtrace
+    decoding:
+      codec: bytes
+    respawn_on_exit: true
+    respawn_interval_secs: 5
+
+transforms:
+  # Extract IOCs and check for threats using matchy
+  threat_detection:
+    type: matchy
+    inputs: [macos_syslog]
+    
+    # Threat intelligence database
+    databases:
+      threats:
+        path: /data/threats.mxy
+    
+    # Extract IOCs from log messages
+    extract:
+      domains: true
+      ipv4: true
+      ipv6: true
+      hashes: true
+    
+    # Output configuration
+    source_field: message
+    output_field: .threat_matches
+    match_field: .threat_detected
+
+sinks:
+  # Send all logs to Axiom with threat enrichment
+  axiom:
+    type: axiom
+    inputs: [threat_detection]
+    token: "${AXIOM_TOKEN:?AXIOM_TOKEN environment variable required}"
+    dataset: "${AXIOM_DATASET:?AXIOM_DATASET environment variable required}"
+    encoding:
+      codec: json
+    batch:
+      max_bytes: 1048576
+      timeout_secs: 5
+    compression: gzip

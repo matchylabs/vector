@@ -1,0 +1,145 @@
+# Example: Using Matchy as an Enrichment Table in VRL
+#
+# This example demonstrates using matchy enrichment tables for threat intelligence
+# lookups in VRL transforms. Matchy provides:
+# - Fast IP address lookups (compatible with MaxMind MMDB format)
+# - Pattern matching for domains and strings
+# - Unified threat intelligence database format (.mxy)
+
+# Declare enrichment tables globally
+enrichment_tables:
+  # Matchy threat intelligence database
+  threats:
+    type: matchy
+    path: /data/threats.mxy
+  
+  # Can also load MaxMind GeoIP databases with matchy
+  geoip:
+    type: matchy
+    path: /data/GeoLite2-City.mmdb
+  
+  # Or use both matchy and native mmdb tables side-by-side
+  geoip_native:
+    type: mmdb
+    path: /data/GeoLite2-Country.mmdb
+
+sources:
+  nginx_logs:
+    type: file
+    include:
+      - /var/log/nginx/access.log
+
+transforms:
+  # Example 1: Basic threat lookup
+  threat_check:
+    type: remap
+    inputs: [nginx_logs]
+    source: |
+      # Extract IP from message
+      parsed = parse_regex!(.message, r'(?P<ip>\d+\.\d+\.\d+\.\d+)')
+      
+      # Look up IP in threats database
+      threat = get_enrichment_table_record("threats", {"ip": parsed.ip})
+      if threat != null {
+        .threat_detected = true
+        .threat_category = threat.category
+        .threat_severity = threat.severity
+      }
+  
+  # Example 2: Multi-table enrichment (threat + GeoIP)
+  enrich_with_context:
+    type: remap
+    inputs: [nginx_logs]
+    source: |
+      parsed = parse_regex!(.message, r'(?P<ip>\d+\.\d+\.\d+\.\d+)')
+      client_ip = parsed.ip
+      
+      # Check threats
+      .threat = get_enrichment_table_record("threats", {"ip": client_ip})
+      
+      # Add GeoIP data
+      geo = get_enrichment_table_record("geoip", {"ip": client_ip})
+      if geo != null {
+        .geo.city = geo.city.names.en
+        .geo.country = geo.country.iso_code
+        .geo.latitude = geo.location.latitude
+        .geo.longitude = geo.location.longitude
+      }
+  
+  # Example 3: Domain lookup (if threats.mxy contains domain patterns)
+  domain_check:
+    type: remap
+    inputs: [nginx_logs]
+    source: |
+      # Parse domain from URL
+      parsed = parse_regex!(.message, r'https?://(?P<domain>[^/]+)')
+      
+      # Look up domain in threats database
+      threat = get_enrichment_table_record("threats", {"text": parsed.domain})
+      if threat != null {
+        .malicious_domain = true
+        .domain_threat_type = threat.type
+      }
+  
+  # Example 4: Conditional enrichment
+  smart_enrich:
+    type: remap
+    inputs: [nginx_logs]
+    source: |
+      # Only look up external IPs
+      parsed = parse_regex!(.message, r'(?P<ip>\d+\.\d+\.\d+\.\d+)')
+      ip = parsed.ip
+      
+      # Skip RFC1918 private IPs
+      if !starts_with(ip, "10.") && 
+         !starts_with(ip, "192.168.") && 
+         !starts_with(ip, "172.") {
+        
+        .threat = get_enrichment_table_record("threats", {"ip": ip})
+        .geo = get_enrichment_table_record("geoip", {"ip": ip})
+      }
+  
+  # Example 5: Extract and enrich with matchy_extract() VRL function
+  extract_and_check:
+    type: remap
+    inputs: [nginx_logs]
+    source: |
+      # Extract all IOCs from the log message
+      iocs = matchy_extract(.message, types: ["ipv4", "ipv6", "domains", "hashes"])
+      
+      # Check each extracted IOC against threat database
+      .threats = []
+      for ioc in iocs {
+        threat = get_enrichment_table_record("threats", {"text": ioc.value})
+        if threat != null {
+          .threats = push(.threats, {
+            "type": ioc.type,
+            "value": ioc.value,
+            "position": ioc.start,
+            "threat_category": threat.category,
+            "threat_severity": threat.severity
+          })
+        }
+      }
+      
+      # Set summary flags
+      .has_threats = length(.threats) > 0
+      if .has_threats {
+        .threat_count = length(.threats)
+      }
+
+sinks:
+  # Route threats to alert sink
+  threat_alerts:
+    type: console
+    inputs: [threat_check]
+    encoding:
+      codec: json
+
+  # Send enriched logs to SIEM
+  siem:
+    type: http
+    inputs: [enrich_with_context]
+    uri: https://siem.example.com/logs
+    encoding:
+      codec: json

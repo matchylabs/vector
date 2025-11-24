@@ -13049,6 +13049,7 @@ dependencies = [
 name = "vector-vrl-functions"
 version = "0.1.0"
 dependencies = [
+ "matchy",
  "vrl",
 ]
 

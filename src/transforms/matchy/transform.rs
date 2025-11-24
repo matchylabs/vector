@@ -1,15 +1,13 @@
+use matchy::extractor::{Extractor, ExtractorBuilder};
+use matchy::{Database, QueryResult};
+use serde_json::json;
 use std::cell::RefCell;
 use std::sync::Arc;
-use matchy::{Database, QueryResult};
-use matchy::extractor::{ExtractorBuilder, Extractor};
-use serde_json::json;
 use vector_lib::event::Event;
 
-use crate::{
-    transforms::{FunctionTransform, OutputBuffer, Transform},
-};
+use crate::transforms::{FunctionTransform, OutputBuffer, Transform};
 
-use super::config::{MatchyConfig, ExtractionConfig};
+use super::config::{ExtractionConfig, MatchyConfig};
 
 // Thread-local extractor storage - each thread gets its own Extractor instance
 // to avoid mutex contention. Extractor is cheap to construct (just config + memchr patterns).
@@ -40,12 +38,12 @@ impl MatchyTransform {
         let mut databases = Vec::new();
         for (db_id, db_config) in config.databases {
             let mut opener = Database::from(&db_config.path);
-            
+
             // Enable auto-reload if configured
             if db_config.auto_reload.unwrap_or(false) {
                 opener = opener.auto_reload();
             }
-            
+
             let db = opener
                 .open()
                 .map_err(|e| format!("Failed to open database '{}': {}", db_id, e))?;
@@ -85,7 +83,7 @@ impl FunctionTransform for MatchyTransform {
         // If extraction is enabled, extract IoCs and match them
         if let Some(ref config) = self.extractor_config {
             let input_bytes = source_value.as_bytes();
-            
+
             // Get or create thread-local extractor
             EXTRACTOR.with(|cell| {
                 let mut opt = cell.borrow_mut();
@@ -102,13 +100,13 @@ impl FunctionTransform for MatchyTransform {
                         }
                     }
                 }
-                
+
                 let extractor = opt.as_ref().unwrap();
-                
+
                 // Extract and match
                 for match_item in extractor.extract_from_line(input_bytes) {
                     let item_type = match_item.item.type_name();
-                    
+
                     for (db_id, db) in &self.databases {
                         // Use lookup_extracted - handles IP vs string automatically, no conversions needed
                         match db.lookup_extracted(&match_item, input_bytes) {
@@ -121,11 +119,14 @@ impl FunctionTransform for MatchyTransform {
                                     QueryResult::Pattern { data, .. } => {
                                         // Take the first non-None data value
                                         let first_data = data.into_iter().find_map(|d| d);
-                                        (first_data.and_then(|d| serde_json::to_value(&d).ok()), "pattern")
+                                        (
+                                            first_data.and_then(|d| serde_json::to_value(&d).ok()),
+                                            "pattern",
+                                        )
                                     }
                                     QueryResult::NotFound => (None, "none"),
                                 };
-                                
+
                                 if let Some(json_data) = json_data {
                                     // Only convert to string when needed for output
                                     let matched_text = match_item.as_str(input_bytes);
@@ -163,11 +164,14 @@ impl FunctionTransform for MatchyTransform {
                             QueryResult::Pattern { data, .. } => {
                                 // Take the first non-None data value
                                 let first_data = data.into_iter().find_map(|d| d);
-                                (first_data.and_then(|d| serde_json::to_value(&d).ok()), "pattern")
+                                (
+                                    first_data.and_then(|d| serde_json::to_value(&d).ok()),
+                                    "pattern",
+                                )
                             }
                             QueryResult::NotFound => (None, "none"),
                         };
-                        
+
                         if let Some(json_data) = json_data {
                             all_matches.push(json!({
                                 "database_id": db_id,
@@ -192,7 +196,7 @@ impl FunctionTransform for MatchyTransform {
         // Set the output field with matches (if any)
         if !all_matches.is_empty() {
             log.insert(self.output_field.as_str(), json!(all_matches));
-            
+
             // Set match flag if configured
             if let Some(ref match_field) = self.match_field {
                 log.insert(match_field.as_str(), true);
@@ -200,7 +204,7 @@ impl FunctionTransform for MatchyTransform {
         } else {
             // Set empty array for no matches
             log.insert(self.output_field.as_str(), json!([]));
-            
+
             // Set match flag to false if configured
             if let Some(ref match_field) = self.match_field {
                 log.insert(match_field.as_str(), false);
@@ -220,7 +224,7 @@ pub fn build_transform(config: MatchyConfig) -> crate::Result<Transform> {
 /// Build extractor from configuration
 fn build_extractor(config: &ExtractionConfig) -> crate::Result<Extractor> {
     let mut builder = ExtractorBuilder::new();
-    
+
     builder = builder.extract_domains(config.domains);
     builder = builder.extract_ipv4(config.ipv4);
     builder = builder.extract_ipv6(config.ipv6);
@@ -229,7 +233,8 @@ fn build_extractor(config: &ExtractionConfig) -> crate::Result<Extractor> {
     builder = builder.extract_bitcoin(config.bitcoin);
     builder = builder.extract_ethereum(config.ethereum);
     builder = builder.extract_monero(config.monero);
-    
-    builder.build()
+
+    builder
+        .build()
         .map_err(|e| format!("Failed to build extractor: {}", e).into())
 }

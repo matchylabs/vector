@@ -1,0 +1,96 @@
+# Customer Log Routing with Matchy
+#
+# This example shows how to use matchy for routing logs to different
+# files based on customer IP addresses. No extraction needed - just
+# direct field lookup with dynamic path templating.
+#
+# Use case: Multi-tenant log aggregation where you want to split logs
+# into separate files per customer based on their IP subnet.
+
+sources:
+  # Example: nginx access logs
+  nginx_logs:
+    type: file
+    include:
+      - /var/log/nginx/access.log
+    read_from: beginning
+
+transforms:
+  # Parse nginx log format to extract structured fields
+  parse:
+    type: remap
+    inputs: [nginx_logs]
+    source: |
+      # Parse nginx combined log format
+      . = parse_regex!(.message, r'^(?P<client_ip>\S+) - (?P<user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>\S+)" (?P<status>\d+) (?P<bytes>\d+) "(?P<referer>[^"]*)" "(?P<user_agent>[^"]*)"$')
+      
+      # Parse timestamp
+      .timestamp = parse_timestamp!(.timestamp, "%d/%b/%Y:%H:%M:%S %z")
+  
+  # Look up customer info based on client_ip field
+  customer_lookup:
+    type: matchy
+    inputs: [parse]
+    databases:
+      customers:
+        # Database contains IP subnet → customer data mappings
+        # Build with: matchy build -f customers.csv -o /data/customer_subnets.mxy
+        # CSV format:
+        #   subnet,customer,tier
+        #   192.168.1.0/24,acme_corp,premium
+        #   10.0.0.0/24,widgets_inc,standard
+        path: /data/customer_subnets.mxy
+        auto_reload: true
+    
+    source_field: client_ip        # Look up this specific field (no extraction)
+    output_field: .customer_info   # Writes array of match results
+    match_field: .has_customer     # Optional: boolean flag
+
+sinks:
+  # Single sink routes to different files using template path
+  customer_logs:
+    type: file
+    inputs: [customer_lookup]
+    
+    # Template dynamically inserts customer name into path
+    # Access nested data: customer_info[0].data.customer
+    # Creates paths like:
+    #   /logs/customer_logs/acme_corp/2024-11-26.log
+    #   /logs/customer_logs/widgets_inc/2024-11-26.log
+    #   /logs/customer_logs/unmatched/2024-11-26.log
+    path: /logs/customer_logs/{{ customer_info[0].data.customer | default: "unmatched" }}/%Y-%m-%d.log
+    
+    encoding:
+      codec: json
+    
+    # Optional: Compress rotated files
+    compression: gzip
+
+# Example: Route to different sinks by tier (premium vs standard)
+# sinks:
+#   premium_logs:
+#     type: file
+#     inputs: [customer_lookup]
+#     path: /logs/premium/{{ customer_info[0].data.customer }}/%Y-%m-%d.log
+#     # Only premium customers
+#     # (Requires using route transform to filter by tier first)
+#   
+#   standard_logs:
+#     type: file
+#     inputs: [customer_lookup]
+#     path: /logs/standard/{{ customer_info[0].data.customer }}/%Y-%m-%d.log
+
+# How to build the customer database:
+#
+# 1. Create customers.csv:
+#    subnet,customer,tier
+#    192.168.1.0/24,acme_corp,premium
+#    10.0.0.0/24,widgets_inc,standard
+#    172.16.0.0/16,startup_xyz,standard
+#
+# 2. Build .mxy database:
+#    matchy build -f customers.csv -o customer_subnets.mxy
+#
+# 3. Test lookup:
+#    matchy query customer_subnets.mxy 192.168.1.42
+#    # Output: {"customer": "acme_corp", "tier": "premium"}

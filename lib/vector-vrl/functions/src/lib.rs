@@ -12,6 +12,7 @@
 use vrl::{compiler::Function, path::OwnedTargetPath};
 
 pub mod get_secret;
+pub mod matchy_extract;
 pub mod remove_secret;
 pub mod set_secret;
 pub mod set_semantic_meaning;
@@ -27,12 +28,17 @@ pub const LEGACY_METADATA_KEYS: [&str; 2] = ["datadog_api_key", "splunk_hec_toke
 
 /// Returns Vector-specific secret functions.
 pub fn secret_functions() -> Vec<Box<dyn Function>> {
-    vec![
+    let mut functions: Vec<Box<dyn Function>> = vec![
         Box::new(set_semantic_meaning::SetSemanticMeaning) as _,
         Box::new(get_secret::GetSecret) as _,
         Box::new(remove_secret::RemoveSecret) as _,
         Box::new(set_secret::SetSecret) as _,
-    ]
+    ];
+
+    #[cfg(feature = "enrichment-tables-matchy")]
+    functions.push(Box::new(matchy_extract::MatchyExtract) as _);
+
+    functions
 }
 
 /// Returns all VRL functions available in Vector.

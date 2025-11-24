@@ -1,0 +1,29 @@
+sources:
+  demo_logs:
+    type: stdin
+
+transforms:
+  check_threats:
+    type: matchy
+    inputs:
+      - demo_logs
+    source_field: message
+    output_field: matchy_results
+    match_field: is_threat
+    databases:
+      threats:
+        path: /Users/seth/matchy/threats.mxy
+        auto_reload: true
+    extract:
+      domains: true
+      ipv4: true
+      ipv6: true
+      hashes: true
+
+sinks:
+  output:
+    type: console
+    inputs:
+      - check_threats
+    encoding:
+      codec: json

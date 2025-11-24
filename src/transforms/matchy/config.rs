@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use vector_lib::{
-    config::{clone_input_definitions, LogNamespace},
+    config::{LogNamespace, clone_input_definitions},
     configurable::configurable_component,
 };
 
