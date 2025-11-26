@@ -28,6 +28,7 @@ pub mod matchy;
 ///
 /// * [CSV](https://en.wikipedia.org/wiki/Comma-separated_values) files
 /// * [MaxMind](https://www.maxmind.com/en/home) databases
+/// * [Matchy](https://github.com/sethhall/matchy) databases for pattern matching and threat intelligence
 /// * In-memory storage
 ///
 /// For the lookup in the enrichment tables to be as performant as possible, the data is indexed according
@@ -69,10 +70,12 @@ pub enum EnrichmentTables {
     #[cfg(feature = "enrichment-tables-mmdb")]
     Mmdb(mmdb::MmdbConfig),
 
-    /// Exposes data from a Matchy database (.mxy) or MaxMind database (.mmdb) as an enrichment table.
+    /// Exposes data from a [Matchy][matchy] database (.mxy) or MaxMind database (.mmdb) as an enrichment table.
     ///
     /// Matchy provides unified IP lookups, pattern matching, and threat intelligence capabilities.
     /// Fully compatible with MaxMind MMDB format for drop-in GeoIP replacement.
+    ///
+    /// [matchy]: https://github.com/sethhall/matchy
     #[cfg(feature = "enrichment-tables-matchy")]
     Matchy(matchy::MatchyConfig),
 }

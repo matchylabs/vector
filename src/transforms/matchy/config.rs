@@ -103,6 +103,7 @@ pub struct MatchyConfig {
     ///
     /// Each database will be loaded and queried for matches. Results
     /// will be tagged with the database ID for downstream filtering.
+    #[configurable(metadata(docs::additional_props_description = "Configuration for a matchy database."))]
     pub databases: HashMap<String, DatabaseConfig>,
 
     /// Extraction configuration (optional)

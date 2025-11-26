@@ -34,6 +34,7 @@ pub struct ConfigBuilder {
     pub healthchecks: HealthcheckOptions,
 
     /// All configured enrichment tables.
+    #[configurable(metadata(docs::additional_props_description = "An enrichment table that can be used in transforms."))]
     #[serde(default)]
     pub enrichment_tables: IndexMap<ComponentKey, EnrichmentTableOuter<String>>,
 

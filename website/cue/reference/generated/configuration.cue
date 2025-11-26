@@ -276,7 +276,7 @@ generated: configuration: configuration: {
 					[geolite2]: https://dev.maxmind.com/geoip/geoip2/geolite2/#Download_Access
 					"""
 				required:      true
-				relevant_when: "type = \"geoip\" or type = \"mmdb\""
+				relevant_when: "type = \"geoip\" or type = \"mmdb\" or type = \"matchy\""
 			}
 			type: {
 				required: true
@@ -297,6 +297,14 @@ generated: configuration: configuration: {
 
 						[maxmind]: https://www.maxmind.com/
 						"""
+					matchy: """
+						Exposes data from a [Matchy][matchy] database (.mxy) or MaxMind database (.mmdb) as an enrichment table.
+
+						Matchy provides unified IP lookups, pattern matching, and threat intelligence capabilities.
+						Fully compatible with MaxMind MMDB format for drop-in GeoIP replacement.
+
+						[matchy]: https://github.com/sethhall/matchy
+						"""
 				}
 				description: "enrichment table type"
 			}
@@ -307,6 +315,7 @@ generated: configuration: configuration: {
 
 			* [CSV](https://en.wikipedia.org/wiki/Comma-separated_values) files
 			* [MaxMind](https://www.maxmind.com/en/home) databases
+			* [Matchy](https://github.com/sethhall/matchy) databases for pattern matching and threat intelligence
 			* In-memory storage
 
 			For the lookup in the enrichment tables to be as performant as possible, the data is indexed according
