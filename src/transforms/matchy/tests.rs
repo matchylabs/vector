@@ -358,6 +358,144 @@ fn remap_multiple_databases() {
 }
 
 #[test]
+fn remap_direct_field_lookup() {
+    // Test direct field lookup without extraction (customer routing use case)
+    use std::collections::HashMap;
+    use std::io::Write;
+
+    let mut tmpfile = tempfile::NamedTempFile::new().unwrap();
+
+    // Create database with IP → customer mapping
+    let mut builder = matchy::DatabaseBuilder::new(matchy::MatchMode::CaseInsensitive);
+
+    // Add customer IP ranges with customer names as data
+    let mut customer_a_data = HashMap::new();
+    customer_a_data.insert(
+        "customer".to_string(),
+        matchy::DataValue::String("customer_a".to_string()),
+    );
+    customer_a_data.insert(
+        "tier".to_string(),
+        matchy::DataValue::String("premium".to_string()),
+    );
+
+    let mut customer_b_data = HashMap::new();
+    customer_b_data.insert(
+        "customer".to_string(),
+        matchy::DataValue::String("customer_b".to_string()),
+    );
+    customer_b_data.insert(
+        "tier".to_string(),
+        matchy::DataValue::String("standard".to_string()),
+    );
+
+    builder.add_ip("192.168.1.0/24", customer_a_data).unwrap();
+    builder.add_ip("10.0.0.0/24", customer_b_data).unwrap();
+
+    let db_bytes = builder.build().unwrap();
+    tmpfile.write_all(&db_bytes).unwrap();
+    tmpfile.flush().unwrap();
+
+    let mut databases = HashMap::new();
+    databases.insert(
+        "customers".to_string(),
+        DatabaseConfig {
+            path: tmpfile.path().to_string_lossy().to_string(),
+            auto_reload: None,
+        },
+    );
+
+    let config = MatchyConfig {
+        databases,
+        extract: None, // No extraction - direct field lookup
+        source_field: "client_ip".to_string(),
+        output_field: ".customer_info".to_string(),
+        match_field: None,
+    };
+
+    let mut transform = MatchyTransform::new(config).unwrap();
+
+    // Create event with parsed client_ip field
+    let mut event = Event::Log(LogEvent::from("some message"));
+    event.as_mut_log().insert("client_ip", "192.168.1.42");
+
+    let result = transform_one(&mut transform, event).unwrap();
+    let log = result.as_log();
+
+    // Should have customer info
+    let customer_info = log.get(".customer_info").unwrap();
+    let matches = customer_info.as_array().unwrap();
+    assert_eq!(matches.len(), 1);
+
+    // Verify customer data
+    let match_obj = matches[0].as_object().unwrap();
+    let data = match_obj.get("data").unwrap().as_object().unwrap();
+    assert_eq!(
+        data.get("customer").unwrap().as_str().unwrap(),
+        "customer_a"
+    );
+    assert_eq!(data.get("tier").unwrap().as_str().unwrap(), "premium");
+    assert_eq!(
+        match_obj.get("database_id").unwrap().as_str().unwrap(),
+        "customers"
+    );
+    assert_eq!(
+        match_obj.get("matched_text").unwrap().as_str().unwrap(),
+        "192.168.1.42"
+    );
+}
+
+#[test]
+fn remap_direct_field_lookup_no_match() {
+    use std::collections::HashMap;
+    use std::io::Write;
+
+    let mut tmpfile = tempfile::NamedTempFile::new().unwrap();
+    let mut builder = matchy::DatabaseBuilder::new(matchy::MatchMode::CaseInsensitive);
+
+    let mut data = HashMap::new();
+    data.insert(
+        "customer".to_string(),
+        matchy::DataValue::String("test".to_string()),
+    );
+    builder.add_ip("192.168.1.0/24", data).unwrap();
+
+    let db_bytes = builder.build().unwrap();
+    tmpfile.write_all(&db_bytes).unwrap();
+    tmpfile.flush().unwrap();
+
+    let mut databases = HashMap::new();
+    databases.insert(
+        "customers".to_string(),
+        DatabaseConfig {
+            path: tmpfile.path().to_string_lossy().to_string(),
+            auto_reload: None,
+        },
+    );
+
+    let config = MatchyConfig {
+        databases,
+        extract: None,
+        source_field: "client_ip".to_string(),
+        output_field: ".customer_info".to_string(),
+        match_field: None,
+    };
+
+    let mut transform = MatchyTransform::new(config).unwrap();
+
+    // IP not in any customer range
+    let mut event = Event::Log(LogEvent::from("some message"));
+    event.as_mut_log().insert("client_ip", "203.0.113.1");
+
+    let result = transform_one(&mut transform, event).unwrap();
+    let log = result.as_log();
+
+    // Should have empty array (no match)
+    let customer_info = log.get(".customer_info").unwrap();
+    assert_eq!(customer_info.as_array().unwrap().len(), 0);
+}
+
+#[test]
 fn generate_config() {
     crate::test_util::test_generate_config::<MatchyConfig>();
 }

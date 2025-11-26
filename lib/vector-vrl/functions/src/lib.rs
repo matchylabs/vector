@@ -26,8 +26,8 @@ pub enum MetadataKey {
 
 pub const LEGACY_METADATA_KEYS: [&str; 2] = ["datadog_api_key", "splunk_hec_token"];
 
-/// Returns Vector-specific secret functions.
 pub fn secret_functions() -> Vec<Box<dyn Function>> {
+    #[allow(unused_mut)]
     let mut functions: Vec<Box<dyn Function>> = vec![
         Box::new(set_semantic_meaning::SetSemanticMeaning) as _,
         Box::new(get_secret::GetSecret) as _,
@@ -41,7 +41,6 @@ pub fn secret_functions() -> Vec<Box<dyn Function>> {
     functions
 }
 
-/// Returns all VRL functions available in Vector.
 #[allow(clippy::disallowed_methods)]
 pub fn all() -> Vec<Box<dyn Function>> {
     let functions = vrl::stdlib::all()

@@ -1,9 +1,3 @@
-//! Handles enrichment tables for `type = matchy`.
-//! Enrichment data is loaded from Matchy databases (.mxy) or MaxMind databases (.mmdb).
-//!
-//! Matchy is a unified database format for IP address and pattern matching with support
-//! for threat intelligence, IoC matching, and GeoIP lookups. It provides "embrace and extend"
-//! compatibility with MaxMind MMDB databases while adding pattern matching capabilities.
 use std::{fs, path::PathBuf, sync::Arc, time::SystemTime};
 
 use matchy::{Database, QueryResult};
@@ -15,14 +9,9 @@ use vrl::value::{ObjectMap, Value};
 
 use crate::config::{EnrichmentTableConfig, GenerateConfig};
 
-/// Configuration for the `matchy` enrichment table.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[configurable_component(enrichment_table("matchy"))]
 pub struct MatchyConfig {
-    /// Path to the Matchy database file (.mxy) or MaxMind database (.mmdb)
-    ///
-    /// Matchy databases provide IP lookups, pattern matching, and threat intelligence.
-    /// MaxMind MMDB databases (GeoIP2, GeoLite2) are fully supported for backward compatibility.
     pub path: PathBuf,
 }
 
@@ -45,7 +34,6 @@ impl EnrichmentTableConfig for MatchyConfig {
 }
 
 #[derive(Clone)]
-/// A struct that implements [vector_lib::enrichment::Table] to handle loading enrichment data from a Matchy database.
 pub struct Matchy {
     config: MatchyConfig,
     database: Arc<Database>,
@@ -53,7 +41,6 @@ pub struct Matchy {
 }
 
 impl Matchy {
-    /// Creates a new Matchy struct from the provided config.
     pub fn new(config: MatchyConfig) -> crate::Result<Self> {
         let database = Arc::new(
             Database::from(&config.path)
@@ -69,38 +56,31 @@ impl Matchy {
     }
 
     fn lookup(&self, text: &str, select: Option<&[String]>) -> Option<ObjectMap> {
-        // Perform the lookup
         let result = self.database.lookup(text).ok()??;
 
-        // Extract data from the QueryResult
         let data_json = match result {
             QueryResult::Ip { data, .. } => serde_json::to_value(&data).ok()?,
             QueryResult::Pattern { data, .. } => {
-                // Take the first non-None data value
                 let first_data = data.into_iter().find_map(|d| d)?;
                 serde_json::to_value(&first_data).ok()?
             }
             QueryResult::NotFound => return None,
         };
 
-        // Convert JSON to ObjectMap
         let object_map = match data_json {
             serde_json::Value::Object(map) => {
-                // Convert serde_json::Map to vrl::value::ObjectMap
                 let mut vrl_map = ObjectMap::new();
                 for (k, v) in map {
                     vrl_map.insert(k.into(), json_to_vrl_value(v));
                 }
                 vrl_map
             }
-            _ => return None, // Data must be an object
+            _ => return None,
         };
 
-        // Apply field selection if specified
         if let Some(fields) = select {
             let mut filtered = ObjectMap::new();
             for field in fields {
-                // Support nested field access with dot notation (e.g., "location.latitude")
                 if let Some(value) = get_nested_value(&object_map, field) {
                     set_nested_value(&mut filtered, field, value);
                 }
@@ -112,7 +92,6 @@ impl Matchy {
     }
 }
 
-/// Convert serde_json::Value to vrl::value::Value
 fn json_to_vrl_value(json: serde_json::Value) -> Value {
     match json {
         serde_json::Value::Null => Value::Null,
@@ -143,7 +122,6 @@ fn json_to_vrl_value(json: serde_json::Value) -> Value {
     }
 }
 
-/// Get nested value from ObjectMap using dot notation
 fn get_nested_value(map: &ObjectMap, path: &str) -> Option<Value> {
     let parts: Vec<&str> = path.split('.').collect();
     let mut current = Value::Object(map.clone());
@@ -160,8 +138,6 @@ fn get_nested_value(map: &ObjectMap, path: &str) -> Option<Value> {
     Some(current)
 }
 
-/// Set nested value in ObjectMap using dot notation
-/// For simplicity, creates nested structure for the value
 fn set_nested_value(map: &mut ObjectMap, path: &str, value: Value) {
     let parts: Vec<&str> = path.split('.').collect();
 
@@ -170,7 +146,6 @@ fn set_nested_value(map: &mut ObjectMap, path: &str, value: Value) {
         return;
     }
 
-    // Build nested structure from the bottom up
     let mut current_value = value;
     for part in parts.iter().rev() {
         let mut nested_map = ObjectMap::new();
@@ -178,7 +153,6 @@ fn set_nested_value(map: &mut ObjectMap, path: &str, value: Value) {
         current_value = Value::Object(nested_map);
     }
 
-    // The outermost layer was created as an extra wrapper, unwrap it
     if let Value::Object(mut outer) = current_value {
         if let Some((key, val)) = outer.iter_mut().next() {
             map.insert(key.clone(), val.clone());
@@ -187,11 +161,6 @@ fn set_nested_value(map: &mut ObjectMap, path: &str, value: Value) {
 }
 
 impl Table for Matchy {
-    /// Search the enrichment table data with the given condition.
-    /// All conditions must match (AND).
-    ///
-    /// # Errors
-    /// Errors if no rows, or more than 1 row is found.
     fn find_table_row<'a>(
         &self,
         case: Case,
@@ -209,9 +178,6 @@ impl Table for Matchy {
         }
     }
 
-    /// Search the enrichment table data with the given condition.
-    /// All conditions must match (AND).
-    /// Can return multiple matched records
     fn find_table_rows<'a>(
         &self,
         _: Case,
@@ -220,7 +186,6 @@ impl Table for Matchy {
         _wildcard: Option<&Value>,
         _: Option<IndexHandle>,
     ) -> Result<Vec<ObjectMap>, String> {
-        // Matchy supports a single lookup condition
         match condition.first() {
             Some(_) if condition.len() > 1 => Err("Only one condition is allowed".to_string()),
             Some(Condition::Equals { value, .. }) => {
@@ -235,11 +200,6 @@ impl Table for Matchy {
         }
     }
 
-    /// Hints to the enrichment table what data is going to be searched to allow it to index the
-    /// data in advance.
-    ///
-    /// # Errors
-    /// Errors if the fields are not in the table.
     fn add_index(&mut self, _: Case, fields: &[&str]) -> Result<IndexHandle, String> {
         match fields.len() {
             0 => Err("Lookup field is required".to_string()),
@@ -248,12 +208,10 @@ impl Table for Matchy {
         }
     }
 
-    /// Returns a list of the field names that are in each index
     fn index_fields(&self) -> Vec<(Case, Vec<String>)> {
         Vec::new()
     }
 
-    /// Returns true if the underlying data has changed and the table needs reloading.
     fn needs_reload(&self) -> bool {
         matches!(fs::metadata(&self.config.path)
             .and_then(|metadata| metadata.modified()),
@@ -272,9 +230,6 @@ mod tests {
     use super::*;
     use vrl::value::Value;
 
-    // Note: Add actual test databases to tests/data/ directory for real tests
-    // These are placeholder test structures
-
     #[test]
     fn test_json_to_vrl_conversion() {
         let json = serde_json::json!({
@@ -288,7 +243,10 @@ mod tests {
         match vrl_value {
             Value::Object(map) => {
                 assert_eq!(map.get("city").unwrap(), &Value::Bytes("London".into()));
-                assert_eq!(map.get("latitude").unwrap(), &Value::Float(51.5074.into()));
+                assert_eq!(
+                    map.get("latitude").unwrap(),
+                    &Value::Float(ordered_float::NotNan::new(51.5074).unwrap())
+                );
                 assert_eq!(map.get("population").unwrap(), &Value::Integer(8_982_000));
             }
             _ => panic!("Expected object"),
@@ -299,11 +257,20 @@ mod tests {
     fn test_get_nested_value() {
         let mut map = ObjectMap::new();
         let mut location = ObjectMap::new();
-        location.insert("latitude".into(), Value::Float(51.5.into()));
-        location.insert("longitude".into(), Value::Float(-0.1.into()));
+        location.insert(
+            "latitude".into(),
+            Value::Float(ordered_float::NotNan::new(51.5).unwrap()),
+        );
+        location.insert(
+            "longitude".into(),
+            Value::Float(ordered_float::NotNan::new(-0.1).unwrap()),
+        );
         map.insert("location".into(), Value::Object(location));
 
         let value = get_nested_value(&map, "location.latitude");
-        assert_eq!(value, Some(Value::Float(51.5.into())));
+        assert_eq!(
+            value,
+            Some(Value::Float(ordered_float::NotNan::new(51.5).unwrap()))
+        );
     }
 }
