@@ -331,6 +331,7 @@ deadpool = { version = "0.12.2", default-features = false, features = ["managed"
 
 # Matchy - data extraction and pattern matching
 matchy = { git = "https://github.com/sethhall/matchy.git", branch = "main", default-features = false, optional = true }
+matchy-extractor = { git = "https://github.com/sethhall/matchy.git", branch = "main", default-features = false, optional = true }
 
 # API
 async-graphql = { version = "7.0.17", default-features = false, optional = true, features = ["chrono", "playground"] }
@@ -589,7 +590,7 @@ enrichment-tables = ["enrichment-tables-geoip", "enrichment-tables-mmdb", "enric
 enrichment-tables-geoip = ["dep:maxminddb"]
 enrichment-tables-mmdb = ["dep:maxminddb"]
 enrichment-tables-memory = ["dep:evmap", "dep:evmap-derive", "dep:thread_local"]
-enrichment-tables-matchy = ["dep:matchy"]
+enrichment-tables-matchy = ["dep:matchy", "vector-vrl-functions/enrichment-tables-matchy"]
 
 # Codecs
 codecs-arrow = ["dep:arrow", "dep:arrow-schema", "vector-lib/arrow"]
@@ -761,7 +762,7 @@ transforms-aws_ec2_metadata = ["dep:arc-swap"]
 transforms-dedupe = ["transforms-impl-dedupe"]
 transforms-filter = []
 transforms-incremental_to_absolute = []
-transforms-matchy = ["dep:matchy"]
+transforms-matchy = ["dep:matchy", "dep:matchy-extractor"]
 transforms-window = []
 transforms-log_to_metric = []
 transforms-lua = ["dep:mlua", "vector-lib/lua"]

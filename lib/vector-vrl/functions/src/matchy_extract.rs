@@ -64,7 +64,6 @@ impl FunctionExpression for MatchyExtractFn {
         let text = self.text.resolve(ctx)?;
         let text_bytes = text.try_bytes_utf8_lossy()?;
 
-        // Parse extraction types if provided
         let extract_types = if let Some(ref types_expr) = self.types {
             let types_value = types_expr.resolve(ctx)?;
             let types_array = types_value.try_array()?;
@@ -75,7 +74,6 @@ impl FunctionExpression for MatchyExtractFn {
             }
             types
         } else {
-            // Default: extract IPs and domains
             vec![
                 "ipv4".to_string(),
                 "ipv6".to_string(),
@@ -83,7 +81,6 @@ impl FunctionExpression for MatchyExtractFn {
             ]
         };
 
-        // Build extractor based on requested types
         let mut builder = matchy::extractor::ExtractorBuilder::new();
 
         for extract_type in &extract_types {
@@ -106,19 +103,15 @@ impl FunctionExpression for MatchyExtractFn {
             .build()
             .map_err(|e| format!("failed to build extractor: {}", e))?;
 
-        // Extract IOCs from text
         let mut results = Vec::new();
         for item in extractor.extract_from_line(text_bytes.as_bytes()) {
             let mut map = ObjectMap::new();
 
-            // Type of IOC
             map.insert("type".into(), item.item.type_name().into());
 
-            // Extracted value
             let value_str = item.as_str(text_bytes.as_bytes());
             map.insert("value".into(), value_str.into());
 
-            // Optional: position in text
             map.insert("start".into(), (item.span.0 as i64).into());
             map.insert("end".into(), (item.span.1 as i64).into());
 
