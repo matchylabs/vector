@@ -87,6 +87,8 @@ mod logplex;
 mod loki;
 #[cfg(feature = "transforms-lua")]
 mod lua;
+#[cfg(feature = "transforms-matchy")]
+mod matchy;
 #[cfg(feature = "transforms-metric_to_log")]
 mod metric_to_log;
 #[cfg(feature = "sources-mongodb_metrics")]
@@ -245,6 +247,8 @@ pub(crate) use self::logplex::*;
 pub(crate) use self::loki::*;
 #[cfg(feature = "transforms-lua")]
 pub(crate) use self::lua::*;
+#[cfg(feature = "transforms-matchy")]
+pub(crate) use self::matchy::*;
 #[cfg(feature = "transforms-metric_to_log")]
 pub(crate) use self::metric_to_log::*;
 #[cfg(feature = "sinks-mqtt")]

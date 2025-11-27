@@ -2,10 +2,17 @@ use matchy::extractor::{Extractor, ExtractorBuilder};
 use matchy::{Database, QueryResult};
 use serde_json::json;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::Arc;
 use vector_lib::event::Event;
 
-use crate::transforms::{FunctionTransform, OutputBuffer, Transform};
+use crate::{
+    internal_events::{
+        MatchyDatabaseQueried, MatchyEventProcessed, MatchyExtracted, MatchyExtractorBuildError,
+        MatchyLookupError,
+    },
+    transforms::{FunctionTransform, OutputBuffer, Transform},
+};
 
 use super::config::{ExtractionConfig, MatchyConfig};
 
@@ -63,6 +70,7 @@ impl FunctionTransform for MatchyTransform {
         };
 
         let mut all_matches = Vec::new();
+        let mut extraction_counts: HashMap<String, usize> = HashMap::new();
 
         if let Some(ref config) = self.extractor_config {
             let input_bytes = source_value.as_bytes();
@@ -73,10 +81,9 @@ impl FunctionTransform for MatchyTransform {
                     match build_extractor(config) {
                         Ok(ext) => *opt = Some(ext),
                         Err(e) => {
-                            tracing::error!(
-                                error = %e,
-                                "Failed to build thread-local extractor"
-                            );
+                            emit!(MatchyExtractorBuildError {
+                                error: e.to_string(),
+                            });
                             return;
                         }
                     }
@@ -86,8 +93,13 @@ impl FunctionTransform for MatchyTransform {
 
                 for match_item in extractor.extract_from_line(input_bytes) {
                     let item_type = match_item.item.type_name();
+                    *extraction_counts.entry(item_type.to_string()).or_insert(0) += 1;
 
                     for (db_id, db) in &self.databases {
+                        emit!(MatchyDatabaseQueried {
+                            database_id: db_id.clone(),
+                        });
+
                         match db.lookup_extracted(&match_item, input_bytes) {
                             Ok(Some(result)) => {
                                 let (json_data, match_type) = match result {
@@ -117,11 +129,10 @@ impl FunctionTransform for MatchyTransform {
                             }
                             Ok(None) => {}
                             Err(e) => {
-                                tracing::warn!(
-                                    database_id = %db_id,
-                                    error = %e,
-                                    "Matchy lookup error"
-                                );
+                                emit!(MatchyLookupError {
+                                    database_id: db_id.clone(),
+                                    error: e.to_string(),
+                                });
                             }
                         }
                     }
@@ -129,6 +140,9 @@ impl FunctionTransform for MatchyTransform {
             });
         } else {
             for (db_id, db) in &self.databases {
+                emit!(MatchyDatabaseQueried {
+                    database_id: db_id.clone(),
+                });
                 match db.lookup(&source_value) {
                     Ok(Some(result)) => {
                         let (json_data, match_type) = match result {
@@ -156,17 +170,26 @@ impl FunctionTransform for MatchyTransform {
                     }
                     Ok(None) => {}
                     Err(e) => {
-                        tracing::warn!(
-                            database_id = %db_id,
-                            error = %e,
-                            "Matchy lookup error"
-                        );
+                        emit!(MatchyLookupError {
+                            database_id: db_id.clone(),
+                            error: e.to_string(),
+                        });
                     }
                 }
             }
         }
 
-        if !all_matches.is_empty() {
+        for (extracted_type, count) in extraction_counts {
+            emit!(MatchyExtracted {
+                extracted_type,
+                count,
+            });
+        }
+
+        let matched = !all_matches.is_empty();
+        let match_count = all_matches.len();
+
+        if matched {
             log.insert(self.output_field.as_str(), json!(all_matches));
 
             if let Some(ref match_field) = self.match_field {
@@ -179,6 +202,11 @@ impl FunctionTransform for MatchyTransform {
                 log.insert(match_field.as_str(), false);
             }
         }
+
+        emit!(MatchyEventProcessed {
+            matched,
+            match_count,
+        });
 
         output.push(event);
     }
