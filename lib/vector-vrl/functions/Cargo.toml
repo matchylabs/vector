@@ -11,7 +11,7 @@ vrl.workspace = true
 enrichment = { path = "../../enrichment" }
 dnstap-parser = { path = "../../dnstap-parser", optional = true }
 vector-vrl-metrics = { path = "../../vector-vrl-metrics", optional = true }
-matchy = { git = "https://github.com/sethhall/matchy.git", branch = "main", default-features = false, optional = true }
+matchy = { git = "https://github.com/matchylabs/matchy.git", branch = "main", default-features = false, optional = true }
 
 [features]
 default = []

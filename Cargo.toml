@@ -330,8 +330,8 @@ lapin = { version = "2.5.3", default-features = false, features = ["native-tls"]
 deadpool = { version = "0.12.2", default-features = false, features = ["managed", "rt_tokio_1"], optional = true }
 
 # Matchy - data extraction and pattern matching
-matchy = { git = "https://github.com/sethhall/matchy.git", branch = "main", default-features = false, optional = true }
-matchy-extractor = { git = "https://github.com/sethhall/matchy.git", branch = "main", default-features = false, optional = true }
+matchy = { git = "https://github.com/matchylabs/matchy.git", branch = "main", default-features = false, optional = true }
+matchy-extractor = { git = "https://github.com/matchylabs/matchy.git", branch = "main", default-features = false, optional = true }
 
 # API
 async-graphql = { version = "7.0.17", default-features = false, optional = true, features = ["chrono", "playground"] }
