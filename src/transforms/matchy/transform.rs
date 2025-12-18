@@ -4,6 +4,7 @@ use serde_json::json;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use vector_lib::event::Event;
 
 use crate::{
@@ -35,8 +36,28 @@ impl MatchyTransform {
         for (db_id, db_config) in config.databases {
             let mut opener = Database::from(&db_config.path);
 
+            if let Some(capacity) = db_config.cache_capacity {
+                if capacity == 0 {
+                    opener = opener.no_cache();
+                } else {
+                    opener = opener.cache_capacity(capacity);
+                }
+            }
+
             if db_config.auto_reload.unwrap_or(false) {
-                opener = opener.auto_reload();
+                opener = opener.watch();
+            }
+
+            if db_config.auto_update.unwrap_or(false) {
+                opener = opener.auto_update();
+
+                if let Some(interval_secs) = db_config.update_interval_secs {
+                    opener = opener.update_interval(Duration::from_secs(interval_secs));
+                }
+
+                if let Some(ref dir) = db_config.cache_dir {
+                    opener = opener.cache_dir(dir);
+                }
             }
 
             let db = opener

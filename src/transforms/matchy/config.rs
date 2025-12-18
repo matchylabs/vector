@@ -28,6 +28,34 @@ pub struct DatabaseConfig {
     /// version with zero downtime. Uses lock-free atomic swapping for minimal overhead.
     #[serde(default)]
     pub auto_reload: Option<bool>,
+
+    /// Enable automatic updates from the database's embedded update URL
+    ///
+    /// When enabled, the database will periodically check its embedded URL for updates
+    /// using HTTP conditional GET (ETag). Updates are downloaded to a cache directory,
+    /// leaving the original file untouched. The database must have an update URL embedded
+    /// in its metadata (set during build with `matchy build --update-url`).
+    #[serde(default)]
+    pub auto_update: Option<bool>,
+
+    /// How often to check for remote updates (in seconds)
+    ///
+    /// Only used when `auto_update` is enabled. Default: 3600 (1 hour).
+    #[serde(default)]
+    pub update_interval_secs: Option<u64>,
+
+    /// Directory to cache downloaded database updates
+    ///
+    /// Only used when `auto_update` is enabled. Default: system cache directory
+    /// (~/.cache/matchy/ on Unix, %LOCALAPPDATA%\matchy\ on Windows).
+    #[serde(default)]
+    pub cache_dir: Option<String>,
+
+    /// LRU cache capacity for query results
+    ///
+    /// Set to 0 to disable caching. Default: 10000 entries.
+    #[serde(default)]
+    pub cache_capacity: Option<usize>,
 }
 
 /// Configuration for extraction settings

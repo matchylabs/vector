@@ -24,6 +24,46 @@ generated: components: transforms: matchy: configuration: {
 					required: false
 					type: bool: {}
 				}
+				auto_update: {
+					description: """
+						Enable automatic updates from the database's embedded update URL
+
+						When enabled, the database will periodically check its embedded URL for updates
+						using HTTP conditional GET (ETag). Updates are downloaded to a cache directory,
+						leaving the original file untouched. The database must have an update URL embedded
+						in its metadata (set during build with `matchy build --update-url`).
+						"""
+					required: false
+					type: bool: {}
+				}
+				update_interval_secs: {
+					description: """
+						How often to check for remote updates (in seconds)
+
+						Only used when `auto_update` is enabled. Default: 3600 (1 hour).
+						"""
+					required: false
+					type: uint: {}
+				}
+				cache_dir: {
+					description: """
+						Directory to cache downloaded database updates
+
+						Only used when `auto_update` is enabled. Default: system cache directory
+						(~/.cache/matchy/ on Unix, %LOCALAPPDATA%\\matchy\\ on Windows).
+						"""
+					required: false
+					type: string: {}
+				}
+				cache_capacity: {
+					description: """
+						LRU cache capacity for query results
+
+						Set to 0 to disable caching. Default: 10000 entries.
+						"""
+					required: false
+					type: uint: {}
+				}
 				path: {
 					description: "Path to the matchy database file (.mxy or .mmdb)"
 					required:    true

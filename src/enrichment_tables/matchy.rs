@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf, sync::Arc, time::SystemTime};
+use std::{fs, path::PathBuf, sync::Arc, time::Duration, time::SystemTime};
 
 use matchy::{Database, QueryResult};
 use vector_lib::{
@@ -13,12 +13,32 @@ use crate::config::{EnrichmentTableConfig, GenerateConfig};
 #[configurable_component(enrichment_table("matchy"))]
 pub struct MatchyConfig {
     pub path: PathBuf,
+
+    #[serde(default)]
+    pub auto_reload: Option<bool>,
+
+    #[serde(default)]
+    pub auto_update: Option<bool>,
+
+    #[serde(default)]
+    pub update_interval_secs: Option<u64>,
+
+    #[serde(default)]
+    pub cache_dir: Option<String>,
+
+    #[serde(default)]
+    pub cache_capacity: Option<usize>,
 }
 
 impl GenerateConfig for MatchyConfig {
     fn generate_config() -> toml::Value {
         toml::Value::try_from(Self {
             path: "/path/to/threats.mxy".into(),
+            auto_reload: None,
+            auto_update: None,
+            update_interval_secs: None,
+            cache_dir: None,
+            cache_capacity: None,
         })
         .unwrap()
     }
@@ -42,8 +62,34 @@ pub struct Matchy {
 
 impl Matchy {
     pub fn new(config: MatchyConfig) -> crate::Result<Self> {
+        let mut opener = Database::from(&config.path);
+
+        if let Some(capacity) = config.cache_capacity {
+            if capacity == 0 {
+                opener = opener.no_cache();
+            } else {
+                opener = opener.cache_capacity(capacity);
+            }
+        }
+
+        if config.auto_reload.unwrap_or(false) {
+            opener = opener.watch();
+        }
+
+        if config.auto_update.unwrap_or(false) {
+            opener = opener.auto_update();
+
+            if let Some(interval_secs) = config.update_interval_secs {
+                opener = opener.update_interval(Duration::from_secs(interval_secs));
+            }
+
+            if let Some(ref dir) = config.cache_dir {
+                opener = opener.cache_dir(dir);
+            }
+        }
+
         let database = Arc::new(
-            Database::from(&config.path)
+            opener
                 .open()
                 .map_err(|e| format!("Failed to open matchy database: {}", e))?,
         );
