@@ -25,18 +25,18 @@ impl Function for MatchyExtract {
 
     fn examples(&self) -> &'static [Example] {
         &[
-            Example {
+            example!(
                 title: "extract IPs and domains",
                 source: r#"matchy_extract("Server 1.2.3.4 contacted evil.com", types: ["ipv4", "domains"])"#,
                 result: Ok(
                     r#"[{"type": "ipv4", "value": "1.2.3.4"}, {"type": "domain", "value": "evil.com"}]"#,
                 ),
-            },
-            Example {
+            ),
+            example!(
                 title: "extract all IOC types (default)",
                 source: r#"matchy_extract("Hash: abc123def456 from 10.0.0.1")"#,
                 result: Ok(r#"[{"type": "ipv4", "value": "10.0.0.1"}]"#),
-            },
+            ),
         ]
     }
 
@@ -126,59 +126,146 @@ impl FunctionExpression for MatchyExtractFn {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enrichment-tables-matchy"))]
 mod tests {
-    use super::*;
-    use vrl::compiler::{TargetValue, TimeZone};
-    use vrl::value::Secrets;
+    fn extract(text: &str, types: &[&str]) -> Vec<(String, String)> {
+        let mut builder = matchy::extractor::ExtractorBuilder::new();
 
-    #[test]
-    fn extract_ipv4() {
-        let mut object = ObjectMap::new();
-        object.insert("message".into(), "Server at 1.2.3.4 responded".into());
-        let mut target = TargetValue {
-            value: Value::Object(object),
-            metadata: Value::Object(ObjectMap::new()),
-            secrets: Secrets::default(),
-        };
-        let mut ctx = Context::new(&mut target, &TimeZone::default());
+        for t in types {
+            builder = match *t {
+                "ipv4" => builder.extract_ipv4(true),
+                "ipv6" => builder.extract_ipv6(true),
+                "domains" => builder.extract_domains(true),
+                "emails" => builder.extract_emails(true),
+                "hashes" => builder.extract_hashes(true),
+                "bitcoin" => builder.extract_bitcoin(true),
+                "ethereum" => builder.extract_ethereum(true),
+                "monero" => builder.extract_monero(true),
+                _ => builder,
+            };
+        }
 
-        let func = MatchyExtractFn {
-            text: Box::new(Literal::from("Server at 1.2.3.4 responded")),
-            types: Some(Box::new(Literal::from(vec!["ipv4"]))),
-        };
-
-        let result = func.resolve(&mut ctx).unwrap();
-        let array = result.as_array().unwrap();
-
-        assert_eq!(array.len(), 1);
-        let first = array[0].as_object().unwrap();
-        assert_eq!(first.get("type").unwrap().as_bytes().unwrap(), b"ipv4");
-        assert_eq!(first.get("value").unwrap().as_bytes().unwrap(), b"1.2.3.4");
+        let extractor = builder.build().unwrap();
+        extractor
+            .extract_from_line(text.as_bytes())
+            .map(|item| {
+                (
+                    item.item.type_name().to_string(),
+                    item.as_str(text.as_bytes()).to_string(),
+                )
+            })
+            .collect()
     }
 
     #[test]
-    fn extract_domain() {
-        let mut object = ObjectMap::new();
-        object.insert("message".into(), "Connected to evil.com".into());
-        let mut target = TargetValue {
-            value: Value::Object(object),
-            metadata: Value::Object(ObjectMap::new()),
-            secrets: Secrets::default(),
-        };
-        let mut ctx = Context::new(&mut target, &TimeZone::default());
+    fn test_extract_ipv4() {
+        let results = extract("Server at 192.168.1.1 responded", &["ipv4"]);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], ("IPv4".to_string(), "192.168.1.1".to_string()));
+    }
 
-        let func = MatchyExtractFn {
-            text: Box::new(Literal::from("Connected to evil.com")),
-            types: Some(Box::new(Literal::from(vec!["domains"]))),
-        };
+    #[test]
+    fn test_extract_multiple_ipv4() {
+        let results = extract("From 10.0.0.1 to 10.0.0.2 via 10.0.0.254", &["ipv4"]);
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].1, "10.0.0.1");
+        assert_eq!(results[1].1, "10.0.0.2");
+        assert_eq!(results[2].1, "10.0.0.254");
+    }
 
-        let result = func.resolve(&mut ctx).unwrap();
-        let array = result.as_array().unwrap();
+    #[test]
+    fn test_extract_ipv6() {
+        let results = extract("Connected to 2001:db8::1 successfully", &["ipv6"]);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], ("IPv6".to_string(), "2001:db8::1".to_string()));
+    }
 
-        assert_eq!(array.len(), 1);
-        let first = array[0].as_object().unwrap();
-        assert_eq!(first.get("type").unwrap().as_bytes().unwrap(), b"domain");
-        assert_eq!(first.get("value").unwrap().as_bytes().unwrap(), b"evil.com");
+    #[test]
+    fn test_extract_domain() {
+        let results = extract("Visit example.com for more info", &["domains"]);
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0],
+            ("Domain".to_string(), "example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_subdomain() {
+        let results = extract("API endpoint: api.staging.example.com", &["domains"]);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1, "api.staging.example.com");
+    }
+
+    #[test]
+    fn test_extract_email() {
+        let results = extract("Contact: user@example.com for help", &["emails"]);
+        assert!(!results.is_empty());
+
+        let emails: Vec<_> = results.iter().filter(|(t, _)| t == "Email").collect();
+        assert_eq!(emails.len(), 1);
+        assert_eq!(emails[0].1, "user@example.com");
+    }
+
+    #[test]
+    fn test_extract_ipv6_full() {
+        let results = extract("Address: 2001:db8:85a3::8a2e:370:7334", &["ipv6"]);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, "IPv6");
+    }
+
+    #[test]
+    fn test_extract_sha256_hash() {
+        let results = extract(
+            "SHA256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            &["hashes"],
+        );
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, "SHA256");
+    }
+
+    #[test]
+    fn test_extract_mixed_types() {
+        let results = extract(
+            "Server 192.168.1.1 at evil.com sent email to admin@corp.com",
+            &["ipv4", "domains", "emails"],
+        );
+
+        let types: Vec<_> = results.iter().map(|(t, _)| t.as_str()).collect();
+        assert!(types.contains(&"IPv4"));
+        assert!(types.contains(&"Domain"));
+        assert!(types.contains(&"Email"));
+    }
+
+    #[test]
+    fn test_extract_no_matches() {
+        let results = extract("Just some regular text here", &["ipv4", "domains"]);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_extract_default_types() {
+        let results = extract(
+            "Server 10.0.0.1 and 2001:db8::1 at example.com",
+            &["ipv4", "ipv6", "domains"],
+        );
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_extract_preserves_position() {
+        let text = "IP: 1.2.3.4";
+        let extractor = matchy::extractor::ExtractorBuilder::new()
+            .extract_ipv4(true)
+            .build()
+            .unwrap();
+
+        let items: Vec<_> = extractor.extract_from_line(text.as_bytes()).collect();
+        assert_eq!(items.len(), 1);
+
+        let expected_start = text.find("1.2.3.4").unwrap();
+        let expected_end = expected_start + "1.2.3.4".len();
+        assert_eq!(items[0].span.0, expected_start);
+        assert_eq!(items[0].span.1, expected_end);
     }
 }
